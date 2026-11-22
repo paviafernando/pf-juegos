@@ -172,3 +172,4 @@ body.mode-phone, body.mode-pad { font-size: 16px; }
 .cover p { color: #dfe4ff; }
 .cover .small { color: var(--mute); font-size: .9rem; }
 .cover .l-bar i { animation-duration: 1.3s; }
+.booting { position: fixed; inset: 0; display: grid; place-items: center; font-size: 5rem; animation: bounce .8s ease-in-out infinite alternate; }
