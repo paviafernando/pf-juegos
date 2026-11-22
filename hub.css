@@ -173,3 +173,8 @@ body.mode-phone, body.mode-pad { font-size: 16px; }
 .cover .small { color: var(--mute); font-size: .9rem; }
 .cover .l-bar i { animation-duration: 1.3s; }
 .booting { position: fixed; inset: 0; display: grid; place-items: center; font-size: 5rem; animation: bounce .8s ease-in-out infinite alternate; }
+
+/* Sin internet */
+body.offline .slots, body.offline .code { display: none; }
+body.offline .card.needs-net { filter: grayscale(1) brightness(.6); }
+body.offline .card.needs-net::before { content: '🌐 Necesita internet'; position: absolute; right: 1rem; bottom: 1rem; z-index: 3; font-size: .85rem; padding: .25em .7em; border-radius: 99px; background: rgba(0,0,0,.6); }

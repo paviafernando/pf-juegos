@@ -37,6 +37,7 @@ window.PF_FALLBACK = [
     ],
     "pad": "/?c={code}&hub={code}",
     "solo": "/#solo",
+    "offline": "/?hub={code}&g={id}",
     "entries": [
       {
         "id": "plane",
@@ -52,7 +53,8 @@ window.PF_FALLBACK = [
         "emoji": "🌎",
         "color": "#2f8fff",
         "desc": "Volá sobre ciudades reales en 3D.",
-        "tv": "/?hub={code}&g=world"
+        "tv": "/?hub={code}&g=world",
+        "needsInternet": true
       },
       {
         "id": "race",

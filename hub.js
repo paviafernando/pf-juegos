@@ -63,18 +63,20 @@
   // Si eso falla se usa la última lista buena guardada y, si no hay, la de games.js.
   function fromManifest(m) {
     const base = String(m.url || '').replace(/\/+$/, '');
-    const fill = (p, c) => (/^https?:/.test(p) ? p : base + (p.startsWith('/') ? p : '/' + p)).replace(/\{code\}/g, c);
-    const one = (e, order) => ({
+    const fill = (p, c, id) => (/^https?:/.test(p) ? p : base + (p.startsWith('/') ? p : '/' + p)).replace(/\{code\}/g, c).replace(/\{id\}/g, id || '');
+    const one = (e, order, raw = e.id) => ({
       id: String(e.id), name: e.name || e.id, emoji: e.emoji || '🎮', color: e.color || '#3fa7ff',
-      group: e.group || '', desc: e.desc || '', tags: e.tags || [], order,
+      group: e.group || '', desc: e.desc || '', tags: e.tags || [], order, online: !!e.needsInternet,
       players: { min: e.players?.min ?? 1, max: e.players?.max ?? 1 },
-      tv: (c) => fill(e.tv || '/?hub={code}', c),
-      pad: e.pad ? (c) => fill(e.pad, c) : null,
-      solo: fill(e.solo || '/', ''),
+      tv: (c) => fill(e.tv || '/?hub={code}', c, raw),
+      pad: e.pad ? (c) => fill(e.pad, c, raw) : null,
+      solo: fill(e.solo || '/', '', raw),
+      // Sin internet no hay mandos: se abre para jugar en este mismo dispositivo.
+      offline: (c) => fill(e.offline || (e.pad ? e.solo || '/' : e.tv || '/?hub={code}'), c, raw),
     });
     const order = Number.isFinite(m.order) ? m.order : 100;
     if (Array.isArray(m.entries) && m.entries.length) {
-      return m.entries.filter((e) => !e.hidden).map((e, i) => one({ ...m, ...e, id: `${m.id}-${e.id}`, tags: e.tags || m.tags }, order + i / 100));
+      return m.entries.filter((e) => !e.hidden).map((e, i) => one({ ...m, ...e, id: `${m.id}-${e.id}`, tags: e.tags || m.tags }, order + i / 100, e.id));
     }
     return [one(m, order)];
   }
@@ -100,6 +102,7 @@
   const isPhone = matchMedia('(pointer:coarse)').matches && Math.min(screen.width, screen.height) < 700;
 
   app.innerHTML = '<div class="booting">🎮</div>';
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
   loadGames().then(() => {
     if (joinCode.length === 4) startPad(joinCode);
     else if (qs.has('tv') || !isPhone) startScreen();
@@ -121,7 +124,7 @@
       <main class="tv-main">
         <section class="games" id="games">
           ${GAMES.map((g, i) => `
-            <button class="card" data-nav data-g="${g.id}" style="--c:${g.color}" aria-label="${esc(g.name)}">
+            <button class="card${g.online ? ' needs-net' : ''}" data-nav data-g="${g.id}" style="--c:${g.color}" aria-label="${esc(g.name)}">
               <span class="num">${i + 1}</span>
               <span class="em">${g.emoji}</span>
               <span class="txt">
@@ -174,13 +177,13 @@
 
     // ----- red -----
     let code = store.get('pfj-code', '') || genCode();
-    let peer = null, launching = false;
+    let peer = null, launching = false, netDown = false;
     const players = [];                       // {pid, name, av, slot, conn}
     const slotOf = new Map();                 // pid → slot (para que al volver te toque el mismo lugar)
 
     function openPeer(tries = 0) {
       try { peer?.destroy(); } catch {}
-      if (!window.Peer) { setNet('No se pudo cargar la conexión. Revisá internet y recargá.', true); return; }
+      if (!window.Peer || !navigator.onLine) { setOffline(); return; }
       peer = new window.Peer(PREFIX + code, { debug: 0 });
       peer.on('open', () => { store.set('pfj-code', code); renderCode(); setNet(''); });
       peer.on('error', (e) => {
@@ -189,6 +192,7 @@
           if (tries < 5) { setNet('Recuperando la sala…'); setTimeout(() => openPeer(tries + 1), 1500); }
           else { code = genCode(); openPeer(0); }
         } else if (['network', 'server-error', 'socket-error', 'socket-closed'].includes(e.type)) {
+          if (!navigator.onLine) return setOffline();
           setNet('Sin conexión, reintentando…', true); setTimeout(() => openPeer(tries), 4000);
         }
       });
@@ -199,6 +203,17 @@
         conn.on('error', () => drop(conn));
       });
     }
+    function setOffline() {
+      netDown = true;
+      document.body.classList.add('offline');
+      $('.join h2').textContent = '📴 Sin internet';
+      $('#qr').innerHTML = '<div class="qr-wait">📴</div>';
+      $('#code').textContent = '';
+      $('.how').innerHTML = 'Elegí un juego y se juega en <b>este dispositivo</b>, sin celulares.<br>Cuando vuelva internet, el QR aparece solo.';
+      $('.foot').innerHTML = '🕹️ Flechas del control para elegir · <b>OK</b> para jugar';
+      setNet('');
+    }
+    window.addEventListener('online', () => { if (!peer || !peer.open) location.reload(); });
     function setNet(t, bad) { const n = $('#net'); n.textContent = t; n.classList.toggle('bad', !!bad); }
     function renderCode() {
       $('#code').textContent = code.split('').join(' ');
@@ -280,13 +295,21 @@
     function launch(gid, byPid) {
       const g = GAMES.find((x) => x.id === gid);
       if (!g || launching) return;
-      if (!peer || !peer.open) { toast('Esperá un segundo, todavía me estoy conectando…'); return; }
+      if (!peer || !peer.open) {
+        if (netDown || !window.Peer || !navigator.onLine) {
+          if (g.online) { toast(`${esc(g.emoji)} ${esc(g.name)} necesita internet`); return; }
+          location.href = g.offline(code); return;
+        }
+        toast('Esperá un segundo, todavía me estoy conectando…'); return;
+      }
       launching = true;
       const sorted = [...players].sort((a, b) => a.slot - b.slot);
       const first = sorted.find((p) => p.pid === byPid);
       const order = first ? [first, ...sorted.filter((p) => p !== first)] : sorted;
       const playing = g.pad ? order.slice(0, g.players.max) : [], watching = order.slice(playing.length);
-      playing.forEach((p, i) => send(p, { t: 'go', g: g.id, url: g.pad(code), delay: 1300 + i * 400 }));
+      // El juego recibe nombre y avatar del jugador (pn/pa) para no tener que pedirlos de nuevo.
+      const withMe = (u, p) => u + (u.includes('?') ? '&' : '?') + 'pn=' + encodeURIComponent(p.name) + '&pa=' + encodeURIComponent(p.av);
+      playing.forEach((p, i) => send(p, { t: 'go', g: g.id, url: withMe(g.pad(code), p), delay: 1300 + i * 400 }));
       watching.forEach((p) => send(p, { t: 'watch', g: g.id, who: playing.map((x) => x.av + ' ' + x.name) }));
       sfx.go();
       const L = $('#launch');
