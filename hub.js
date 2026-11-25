@@ -135,6 +135,7 @@
   // =========================================================
   //  PANTALLA (tele)
   // =========================================================
+  const DONATE = 'https://link.mercadopago.com.ar/paviafernando';
   function startScreen() {
     document.body.className = 'mode-tv';
     app.innerHTML = `
@@ -169,6 +170,7 @@
         </aside>
       </main>
       <footer class="foot">🔢 Tocá el <b>número</b> del juego en el control · 🕹️ flechas y <b>OK</b> · o elegí desde el celular</footer>
+      <div class="donate-tv">☕ Gratis para todos · si te gusta, podés colaborar en <b>${DONATE.replace('https://', '')}</b></div>
       <div class="launch" id="launch"></div>`;
 
     // reloj
@@ -407,6 +409,7 @@
           </div>
         </section>
         <a class="as-tv" href="?tv">Usar este dispositivo como pantalla</a>
+        <a class="donate" href="${DONATE}" target="_blank" rel="noopener">☕ Los juegos son gratis. Si te gustan, invitame un cafecito</a>
       </div>`;
     $('#jf').onsubmit = (e) => {
       e.preventDefault();
