@@ -6,6 +6,29 @@
 (function () {
   'use strict';
 
+  // ===== Colores compatibles con teles =====
+  // Los navegadores de las Smart TV no entienden color-mix(): calculamos acá los tonos derivados de --c / --pc
+  // (mezclas con el fondo y transparencias) y el CSS usa esas variables.
+  const BG = [11, 16, 38];
+  const rgbDe = (c) => { c = String(c || '').trim(); let m = c.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+    if (m) { let h = m[1]; if (h.length === 3) h = h.split('').map((x) => x + x).join(''); const n = parseInt(h, 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+    m = c.match(/rgba?\(([^)]+)\)/i); if (m) return m[1].split(',').slice(0, 3).map((x) => parseFloat(x)); return null; };
+  const mezcla = (a, p) => 'rgb(' + a.map((v, i) => Math.round(v * p + BG[i] * (1 - p))).join(',') + ')';
+  const transp = (a, p) => 'rgba(' + a.join(',') + ',' + p + ')';
+  function tintar(el) {
+    if (!el || !el.style) return;
+    const c = rgbDe(el.style.getPropertyValue('--c')), pc = rgbDe(el.style.getPropertyValue('--pc'));
+    if (c && el.dataset.tc !== el.style.getPropertyValue('--c')) { el.dataset.tc = el.style.getPropertyValue('--c');
+      [['--c55', mezcla(c, .55)], ['--c60', mezcla(c, .6)], ['--c65', mezcla(c, .65)], ['--c30', mezcla(c, .3)], ['--ca70', transp(c, .7)]].forEach(([k, v]) => el.style.setProperty(k, v)); }
+    if (pc && el.dataset.tp !== el.style.getPropertyValue('--pc')) { el.dataset.tp = el.style.getPropertyValue('--pc');
+      [['--pa22', transp(pc, .22)], ['--pa25', transp(pc, .25)], ['--pa15', transp(pc, .15)]].forEach(([k, v]) => el.style.setProperty(k, v)); }
+  }
+  function tintarTodo(root) { (root.querySelectorAll ? root.querySelectorAll('[style]') : []).forEach(tintar); tintar(root); }
+  new MutationObserver((muts) => { for (const m of muts) {
+    if (m.type === 'attributes') tintar(m.target);
+    else m.addedNodes.forEach((n) => { if (n.nodeType === 1) tintarTodo(n); }); } })
+    .observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['style'] });
+
   // ===== Configuración =====
   const MAX_PLAYERS = 4;           // subilo cuando quieras más mandos (los colores se repiten solos)
   const PREFIX = 'pfjuegos-hub-';
@@ -145,7 +168,7 @@
           <div class="net" id="net">Conectando…</div>
         </aside>
       </main>
-      <footer class="foot">🕹️ Flechas del control para elegir · <b>OK</b> para jugar · o elegí desde el celular</footer>
+      <footer class="foot">🔢 Tocá el <b>número</b> del juego en el control · 🕹️ flechas y <b>OK</b> · o elegí desde el celular</footer>
       <div class="launch" id="launch"></div>`;
 
     // reloj
@@ -172,8 +195,21 @@
       const dir = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' }[k]
         || { 38: 'up', 40: 'down', 37: 'left', 39: 'right' }[e.keyCode];
       if (dir) { e.preventDefault(); moveFocus(dir); return; }
-      if (/^[1-9]$/.test(k) && GAMES[+k - 1]) launch(GAMES[+k - 1].id);
+      // números del control: 1 a 9 directo; con 10 o más juegos se pueden tocar dos cifras seguidas (1 y 2 = juego 12)
+      const dig = /^[0-9]$/.test(k) ? k : (e.keyCode >= 48 && e.keyCode <= 57) ? String(e.keyCode - 48) : (e.keyCode >= 96 && e.keyCode <= 105) ? String(e.keyCode - 96) : '';
+      if (dig) { e.preventDefault(); teclear(dig); }
     });
+    let numBuf = '', numT = null;
+    function teclear(d) {
+      numBuf = (numBuf + d).replace(/^0+/, '').slice(-2); clearTimeout(numT);
+      const n = +numBuf, g = GAMES[n - 1], card = g && document.querySelector('.card[data-g="' + g.id + '"]');
+      if (!g) { numBuf = d === '0' ? '' : d; if (!GAMES[+numBuf - 1]) { numBuf = ''; return; } return teclear(''); }
+      if (card) card.focus();
+      const puedeSeguir = GAMES.length >= (n * 10);   // ¿todavía puede venir una segunda cifra?
+      if (!puedeSeguir || numBuf.length === 2) { numBuf = ''; toast('▶ ' + n + ' · ' + esc(g.emoji + ' ' + g.name)); launch(g.id); return; }
+      toast(n + '… ' + esc(g.emoji + ' ' + g.name) + ' (o tocá otra cifra)');
+      numT = setTimeout(() => { numBuf = ''; launch(g.id); }, 1300);
+    }
 
     // ----- red -----
     let code = store.get('pfj-code', '') || genCode();
@@ -210,7 +246,7 @@
       $('#qr').innerHTML = '<div class="qr-wait">📴</div>';
       $('#code').textContent = '';
       $('.how').innerHTML = 'Elegí un juego y se juega en <b>este dispositivo</b>, sin celulares.<br>Cuando vuelva internet, el QR aparece solo.';
-      $('.foot').innerHTML = '🕹️ Flechas del control para elegir · <b>OK</b> para jugar';
+      $('.foot').innerHTML = '🔢 Tocá el <b>número</b> del juego en el control · 🕹️ flechas y <b>OK</b>';
       setNet('');
     }
     window.addEventListener('online', () => { if (!peer || !peer.open) location.reload(); });
